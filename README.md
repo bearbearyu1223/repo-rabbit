@@ -28,7 +28,7 @@ Each claim is labeled as read in source, inferred, asserted by a test, taken fro
 You need Claude Code and Python 3.9 or newer. There are no Python packages to install and no API key to configure beyond your Claude Code login.
 
 ```bash
-git clone https://github.com//repo-rabbit.git
+git clone https://github.com/bearbearyu1223/repo-rabbit.git
 cd repo-rabbit
 ./install.sh
 ```
@@ -100,7 +100,7 @@ Deleting `questions.jsonl` or `answers.jsonl` deletes your learning history. Eve
 
 ## How much it costs
 
-RepoRabbit runs on your Claude Code plan or API usage, and exploring reads a lot of code. As one data point, on a 7,400-line Python repository at the default model, an Explore took about 9 minutes and $3.30, answering one question about $0.60, and a refresh after a one-file change about $0.60. Your numbers will differ with repository size and model.
+RepoRabbit runs on your Claude Code plan or API usage, and exploring reads a lot of code. As one data point, on a 7,400-line Python repository at the default model, an Explore took about 9 minutes and $3.30, answering one question about $0.60, a refresh after a one-file change about $0.60, and a tour of two small branches together about 4 minutes and $1.40. Your numbers will differ with repository size and model.
 
 For large repositories, tell it where to focus, for example: `Use repo-rabbit to explore this repository, focusing on the payments service.` The Atlas always reports what was left out.
 
@@ -133,7 +133,10 @@ Your existing settings are preserved and backed up first. The helper cannot chan
 |---|---|
 | Claude says it doesn't know `repo-rabbit` | Start a new Claude Code session after installing |
 | RepoRabbit says its helper was refused | Run `python3 ~/.claude/repo-rabbit/scripts/setup_permissions.py` in your terminal, then start a new session |
-| A question shows "waiting" | RepoRabbit only runs when asked. Paste the prompt from Rabbit Notes into Claude Code |
+| A question shows "waiting" | Unless auto-start is on, RepoRabbit only runs when asked. Paste the prompt from Rabbit Notes into Claude Code |
+| Auto-start can't be turned on | Rabbit Notes says why. Either run the permission command it shows, or make sure `claude` is on the `PATH` of the terminal that started the server, then restart the server |
+| Auto-start stopped after a run | Rabbit Notes gives the reason, and the full output is in `.repo-rabbit/cache/auto-run.log`. Untick and tick the box to try again, or paste the prompt into Claude Code |
+| Auto-start paused after 12 runs | That's the hourly limit. Ask in Claude Code to continue |
 | The page says notes are read-only | You opened the file directly. Ask Claude to open the map, or run `python3 ~/.claude/repo-rabbit/scripts/rabbit.py serve` from the repository |
 | Clicking a source link does nothing | Pick your IDE at the bottom of the sidebar, and make sure that IDE is installed and handles its link type (`vscode://`, `cursor://` or `idea://`) |
 | Explanations are marked "May be out of date" | The cited code changed. Ask RepoRabbit to refresh the Atlas |
@@ -147,6 +150,8 @@ git pull && ./install.sh   # update
 ```
 
 Add `--project /path/to/project` for a project install.
+
+Before you update, stop any running Atlas server by saying `Use repo-rabbit to stop the server.` Afterwards, start a new Claude Code session and open the map again. Otherwise you keep running the old version.
 
 ## How it works
 
