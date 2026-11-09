@@ -32,6 +32,16 @@
   },
   "$defs": {
     "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,118}$" },
+    "tour": {
+      "description": "What the agent writes about one branch. Required group topics: changes, impact, walkthrough, review.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "groups"],
+      "properties": {
+        "summary": { "$ref": "#/$defs/text" },
+        "groups": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/group" } }
+      }
+    },
     "certainty": {
       "description": "verified: read at the cited lines. inferred: reasoning from cited evidence. tested: confirmed by a cited test or an actual run. documented: stated by cited docs, not checked against code. context: framing with no code-specific claim. absence: searched and not found.",
       "enum": ["verified", "inferred", "tested", "documented", "context", "absence"]

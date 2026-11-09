@@ -18,7 +18,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from fixtures import GREET, SCRIPTS, atlas, make_repo
+from fixtures import GREET, SCRIPTS, atlas, make_branches, make_repo, tour_draft
 from playwright.sync_api import sync_playwright
 
 HELPER = str(SCRIPTS / "rabbit.py")
@@ -63,6 +63,7 @@ def main() -> None:
     shots = Path(sys.argv[1]) if len(sys.argv) > 1 else None
     with tempfile.TemporaryDirectory() as tmp:
         repo = make_repo(Path(tmp).resolve() / "repo")
+        make_branches(repo)
         draft = Path(tmp) / "draft.json"
         draft.write_text(json.dumps(atlas()))
         rabbit(repo, "ingest", str(draft))
@@ -136,14 +137,52 @@ def run(repo: Path, url: str, shots: Path | None) -> None:
         assert (code_q["source_file"], code_q["source_start"], code_q["source_end"]) == ("app.py", 12, 12), code_q
         assert by_text["What purpose?"]["block_id"] == "ov.purpose.b"
 
+        # The page says what to do next, then shows the agent working, live.
+        page.click('a[href="#s-notes"]')
+        assert page.evaluate("getComputedStyle(document.getElementById('live')).display") == "none"
+        assert "paste this into Claude Code" in page.inner_text("#flow-msg")
+        assert "Ask repo-rabbit to investigate" in page.inner_text("#flow-msg code")
+        rabbit(repo, "claim", code_q["id"])
+        rabbit(repo, "progress", "--id", code_q["id"], "Reading how greet validates")
+        page.wait_for_selector("#flow-msg:has-text('Reading how greet validates')", timeout=9000)
+        assert "Reading how greet validates" in page.inner_text("#live")
+        page.click('a[href="#s-walkthrough"]')
+        assert "Reading how greet validates" in page.inner_text("#x-wk\\.1 + .thread-wrap .timeline")
+        assert page.inner_text("#x-wk\\.1 + .thread-wrap .status") == "investigating"
+
         # The agent answers while the page is open: the poll delivers it in place.
         answer = Path(repo / ".repo-rabbit/cache/a.json")
         answer.write_text(json.dumps({"text": "Raised for **empty** names.", "refs": [GREET]}))
         rabbit(repo, "answer", code_q["id"], str(answer))
         page.wait_for_selector("#x-wk\\.1 + .thread-wrap .note-answer strong", timeout=9000)
         assert "app.py:10–13" in page.inner_text("#x-wk\\.1 + .thread-wrap .note-answer")
+        assert page.locator("#x-wk\\.1 + .thread-wrap .timeline summary").inner_text() == "How RepoRabbit worked this out"
         if shots:
             page.screenshot(path=str(shots / "e2e-answer.png"))
+
+        # Continue the conversation under the answer; typing survives the live updates.
+        thread = "#x-wk\\.1 + .thread-wrap"
+        page.click(f"{thread} .followup .link-btn")
+        page.fill(f"{thread} .followup textarea", "Half-typed thought")
+        rabbit(repo, "progress", "Something unrelated happened")
+        page.wait_for_timeout(4800)
+        assert page.input_value(f"{thread} .followup textarea") == "Half-typed thought"
+        page.fill(f"{thread} .followup textarea", "What about whitespace-only names?")
+        page.click(f"{thread} .followup button.send")
+        page.wait_for_selector(f"{thread} .note-turn .note-q")
+        assert page.inner_text(f"{thread} .note-turn .note-q") == "What about whitespace-only names?"
+        assert page.locator(f"{thread} .followup").count() == 0  # Nothing to follow up on until it's answered.
+        marks_before = page.locator("mark.note").count()
+        pending = next(q for q in json.loads(rabbit(repo, "questions")) if q["question"].startswith("What about"))
+        assert pending["root_id"] == code_q["id"] and pending["thread"][0]["question"] == "When is this raised?", pending
+        assert "empty" in pending["thread"][0]["answers"][0]
+        answer.write_text(json.dumps({"text": "Whitespace passes the **check**.", "refs": [GREET]}))
+        rabbit(repo, "answer", pending["id"], str(answer))
+        page.wait_for_selector(f"{thread} .note-turn .note-answer strong", timeout=9000)
+        assert page.locator("mark.note").count() == marks_before
+        assert page.locator(f"{thread} .followup .link-btn").count() == 1
+        if shots:
+            page.locator(thread).screenshot(path=str(shots / "e2e-followup.png"))
 
         # A reload, then the panel, then navigation back to the anchor.
         page.reload()
@@ -159,6 +198,57 @@ def run(repo: Path, url: str, shots: Path | None) -> None:
         page.reload()
         page.click('a[href="#s-walkthrough"]')
         assert page.inner_text("mark.note.answered") == "ValueError"
+
+        # Pick a set of branches, then the tour arrives by itself while the page is open.
+        page.click('a[href="#s-tours"]')
+        page.wait_for_selector("#tour-list input[value='feature-a']")
+        assert page.input_value("#tour-base") == "main"
+        assert page.locator("#tour-list input[value='main']").count() == 0
+        assert page.is_disabled("#tour-go")
+        page.fill("#tour-filter", "feature-a")
+        assert page.locator("#tour-list label").count() == 1
+        page.check("#tour-list input[value='feature-a']")
+        page.fill("#tour-filter", "")
+        assert page.is_checked("#tour-list input[value='feature-a']")
+        page.check("#tour-list input[value='feature-b']")
+        assert page.inner_text("#tour-go") == "Tour 2 branches"
+        page.click("#tour-go")
+        page.wait_for_selector("#tour-status code:has-text('feature-b')")
+        assert "tour my selected branches" in page.inner_text("#tour-status")
+        queued = json.loads(rabbit(repo, "tours"))
+        assert [t["branch"] for t in queued] == ["feature-a", "feature-b"]
+        tid = queued[0]["id"]
+        head = subprocess.run(["git", "-C", str(repo), "branch", "--show-current"], capture_output=True, text=True).stdout
+        rabbit(repo, "tour-prepare", tid)
+        rabbit(repo, "progress", "--id", tid, "Reading shout")
+        page.wait_for_selector("#tour-status small:has-text('Reading shout')", timeout=9000)
+        tour_file = Path(repo / ".repo-rabbit/cache/tour.json")
+        tour_file.write_text(json.dumps(tour_draft()))
+        rabbit(repo, "tour-ingest", tid, str(tour_file))
+        page.wait_for_selector(f"#x-{tid}", timeout=12000)
+        assert page.is_visible(f"#x-{tid}")
+        assert "/.repo-rabbit/tours/" in page.get_attribute(f"[id='x-{tid}.w.1'] figcaption a.ref", "href")
+        assert page.locator(f"[id='x-{tid}.w.1'] .line.changed").count() >= 2
+        assert "feature-a" in page.inner_text('.nav-item[data-nav="tours"]')
+        page.click(f"[id='x-{tid}.file.0'] summary")
+        assert page.locator(f"[id='x-{tid}.file.0'] .line.add").count() >= 1
+        assert subprocess.run(["git", "-C", str(repo), "branch", "--show-current"], capture_output=True, text=True).stdout == head
+
+        # Ask about a line that exists only on the branch.
+        assert page.evaluate(SELECT, [f"{tid}.w.1", "shout"])
+        page.wait_for_selector("#ask-pop:not([hidden])")
+        page.click("#ask-pop")
+        page.fill("#ask-text", "Why upper-case?")
+        page.click("#ask-send")
+        wait(page, "document.querySelectorAll('mark.note').length >= 1")
+        tour_q = next(q for q in json.loads(rabbit(repo, "questions")) if q["question"] == "Why upper-case?")
+        assert tour_q["tour"]["id"] == tid and tour_q["source_file"] == "app.py", tour_q
+        if shots:
+            page.screenshot(path=str(shots / "e2e-tour.png"))
+
+        # The auto-start control is present, off, and explains why it can't be enabled yet.
+        page.click('a[href="#s-notes"]')
+        assert page.is_visible("#auto-row") and not page.is_checked("#auto-on")
 
         # Theme toggle.
         before = page.evaluate("getComputedStyle(document.body).backgroundColor")

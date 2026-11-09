@@ -14,8 +14,17 @@ on where this script is installed.
     rabbit.py render [--ide NAME]      rebuild index.html from atlas.json
     rabbit.py serve | stop | status    run the local Atlas server
     rabbit.py questions [--status S]   list questions with their Atlas context
+    rabbit.py claim ID                 show a question as being investigated
+    rabbit.py progress [--id ID] TEXT  report what the agent is doing, for the page
     rabbit.py answer ID FILE           save an answer, then mark the question answered
     rabbit.py fail ID --reason TEXT    record that an investigation failed
+    rabbit.py branches                 list branches that can be toured
+    rabbit.py tour-request --base B X  queue tours of branches X... against base B
+    rabbit.py tours                    list tours waiting to be done
+    rabbit.py tour-prepare ID          snapshot a branch and compute its diff
+    rabbit.py tour-ingest ID FILE      validate and publish a tour
+    rabbit.py tour-fail ID --reason T  record that a tour failed
+    rabbit.py tour-remove ID           delete a tour and its snapshot
     rabbit.py refresh [--dry-run]      detect changes, re-point references, mark stale blocks
     rabbit.py patch FILE               apply agent edits to the stored Atlas atomically
 """
@@ -43,6 +52,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import renderer as render_mod  # noqa: E402
 import store  # noqa: E402
+import tours as tours_mod  # noqa: E402
 from renderer import Renderer, validate_answer_refs  # noqa: E402
 from store import Paths, now_iso, read_json, write_json  # noqa: E402
 from validate import (  # noqa: E402
@@ -66,6 +76,7 @@ OWN_FILES = (".repo-rabbit/", ".claude/repo-rabbit/", ".claude/skills/repo-rabbi
              ".claude/agents/repo-rabbit.md")
 MAX_FILES = 20000
 MAX_FILE_BYTES = 2 * 1024 * 1024
+MAX_PROGRESS = 300
 
 SKIP_DIRS = {".git", ".hg", ".svn", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache",
              ".mypy_cache", ".ruff_cache", ".tox", "dist", "build", "target", ".next", ".repo-rabbit",
@@ -484,16 +495,42 @@ def cmd_status(paths: Paths, _args) -> int:
 # -- questions and answers ------------------------------------------------------------
 
 
-def question_context(page: Renderer, question: dict, answers: list[dict]) -> dict:
+def conversation_before(question: dict, questions: list[dict], answers: list[dict]) -> list[dict]:
+    """The earlier turns of this question's thread, oldest first, with what was answered."""
+    root = question.get("root_id")
+    if not root:
+        return []
+    turns = []
+    for earlier in questions:  # Stored in the order they were asked.
+        if earlier["id"] == question["id"]:
+            break
+        if earlier["id"] == root or earlier.get("root_id") == root:
+            replies = [a for a in answers if a.get("question_id") == earlier["id"]]
+            turns.append({"question": earlier.get("question"), "status": earlier.get("status"),
+                          "answers": [a["text"] for a in replies],
+                          "references": [f"{r['path']}:{r['start']}-{r['end']}" for a in replies for r in a.get("refs", [])]})
+    return turns
+
+
+def question_context(page: Renderer, question: dict, answers: list[dict], questions: list[dict] | None = None) -> dict:
     block_id = question.get("block_id", "")
     block_data = None
     section_title = group_title = None
     for section, group, block in iter_blocks(page.atlas):
         if block["id"] == block_id:
             block_data, section_title, group_title = block, section["id"], group["title"]
+    tour = page.tour_of(block_id)
+    if tour:
+        for group in tour["body"]["groups"]:
+            for block in group["blocks"]:
+                if block["id"] == block_id:
+                    block_data, section_title, group_title = block, "tours", group["title"]
     related = list(iter_refs(block_data)) if block_data else []
     return {
         **question,
+        "thread": conversation_before(question, questions or [], answers),
+        "tour": {"id": tour["id"], "branch": tour["branch"], "snapshot_dir": str(tour["src"]),
+                 "note": "Read and cite this branch's snapshot; reference paths are relative to it."} if tour else None,
         "context": {
             "section": section_title or question.get("section_id"),
             "group": group_title,
@@ -511,9 +548,33 @@ def cmd_questions(paths: Paths, args) -> int:
     page = Renderer(paths, atlas)
     page.reconcile_anchors()
     answers = store.load_answers(paths)
-    rows = [question_context(page, q, answers) for q in store.load_questions(paths)
-            if args.status == "all" or q.get("status") == args.status]
+    everything = store.load_questions(paths)
+    rows = [question_context(page, q, answers, everything) for q in everything
+            if args.status == "all" or q.get("status") == args.status
+            or (args.status == "open" and q.get("status") == "investigating")]  # An interrupted run can be resumed.
     print(json.dumps(rows, indent=1, ensure_ascii=False))
+    return 0
+
+
+def cmd_claim(paths: Paths, args) -> int:
+    try:
+        store.claim_question(paths, args.id)
+    except KeyError:
+        raise CliError(f"no question {args.id}") from None
+    store.log_activity(paths, "RepoRabbit started investigating", args.id)
+    print(json.dumps({"question": args.id, "status": "investigating"}))
+    return 0
+
+
+def cmd_progress(paths: Paths, args) -> int:
+    message = " ".join(args.message.split())
+    if not message or len(message) > MAX_PROGRESS:
+        raise CliError(f"progress must be 1-{MAX_PROGRESS} characters")
+    if find_secret(message):
+        raise CliError("progress text contains credential-looking text")
+    if args.id and args.id not in {r.get("id") for r in store.load_questions(paths) + store.load_tours(paths)}:
+        raise CliError(f"no question {args.id}")
+    store.log_activity(paths, message, args.id)
     return 0
 
 
@@ -527,7 +588,10 @@ def cmd_answer(paths: Paths, args) -> int:
     certainty = answer.get("certainty", "verified")
     if certainty not in ("verified", "inferred", "tested", "documented", "context", "absence"):
         raise CliError(f"unknown certainty {certainty!r}")
-    refs, errors = validate_answer_refs(answer.get("refs", []), SourceIndex(paths.repo))
+    question = next((q for q in store.load_questions(paths) if q.get("id") == args.id), None)
+    atlas = read_json(paths.atlas) or {"sections": [], "project": {}}
+    tour = Renderer(paths, atlas).tour_of(question.get("block_id", "")) if question else None
+    refs, errors = validate_answer_refs(answer.get("refs", []), SourceIndex(tour["src"] if tour else paths.repo))
     if errors:
         raise CliError("the question stays open; bad references:\n  " + "\n  ".join(errors))
     if not refs and certainty not in ("context", "absence"):
@@ -535,9 +599,11 @@ def cmd_answer(paths: Paths, args) -> int:
     if find_secret(answer["text"]):
         raise CliError("the question stays open; the answer contains credential-looking text")
     try:
-        saved = store.record_answer(paths, args.id, {"text": answer["text"], "refs": refs, "certainty": certainty})
+        saved = store.record_answer(paths, args.id, {"text": answer["text"], "refs": refs, "certainty": certainty,
+                                                    **({"tour_id": tour["id"]} if tour else {})})
     except KeyError:
         raise CliError(f"no question {args.id}") from None
+    store.log_activity(paths, f"Answer saved with {len(refs)} source reference(s)", args.id)
     render_page(paths)
     print(json.dumps({"saved": saved["id"], "question": args.id, "status": "answered"}))
     return 0
@@ -548,8 +614,63 @@ def cmd_fail(paths: Paths, args) -> int:
         store.mark_failed(paths, args.id, args.reason)
     except KeyError:
         raise CliError(f"no question {args.id}") from None
+    store.log_activity(paths, f"Investigation failed: {args.reason}"[:MAX_PROGRESS], args.id)
     render_page(paths)
     print(json.dumps({"question": args.id, "status": "failed"}))
+    return 0
+
+
+# -- branch tours ---------------------------------------------------------------------
+
+
+def cmd_branches(paths: Paths, _args) -> int:
+    print(json.dumps(tours_mod.list_branches(paths.repo), indent=1))
+    return 0
+
+
+def cmd_tour_request(paths: Paths, args) -> int:
+    base = args.base or tours_mod.list_branches(paths.repo)["default"]
+    created = tours_mod.request_tours(paths, base, args.branches)
+    print(json.dumps({"base": base, "queued": created}, indent=1))
+    return 0
+
+
+def cmd_tours(paths: Paths, args) -> int:
+    rows = [t for t in store.load_tours(paths) if args.status == "all" or t.get("status") in
+            (("open", "touring") if args.status == "open" else (args.status,))]
+    print(json.dumps(rows, indent=1))
+    return 0
+
+
+def cmd_tour_prepare(paths: Paths, args) -> int:
+    try:
+        print(json.dumps(tours_mod.prepare_tour(paths, args.id), indent=1))
+    except tours_mod.TourError as exc:
+        if args.id in {t.get("id") for t in store.load_tours(paths)}:
+            tours_mod.fail_tour(paths, args.id, str(exc))
+        raise
+    return 0
+
+
+def cmd_tour_ingest(paths: Paths, args) -> int:
+    result = tours_mod.save_tour(paths, args.id, _load_json(Path(args.file)))
+    report_result(result, "tour")
+    if not result.ok:
+        print("Nothing was published. Fix the errors and run tour-ingest again.", file=sys.stderr)
+        return 1
+    render_page(paths)
+    return 0
+
+
+def cmd_tour_fail(paths: Paths, args) -> int:
+    tours_mod.fail_tour(paths, args.id, args.reason)
+    render_page(paths)
+    return 0
+
+
+def cmd_tour_remove(paths: Paths, args) -> int:
+    tours_mod.remove_tour(paths, args.id)
+    render_page(paths)
     return 0
 
 
@@ -644,6 +765,8 @@ def cmd_refresh(paths: Paths, args) -> int:
         "dependent_groups_to_review": sorted(dependents),
     }
     if not args.dry_run:
+        store.log_activity(paths, f"Refresh checked {len(changed) + len(deleted)} changed file(s); "
+                                  f"{len(stale_blocks)} explanation(s) need review")
         save_atlas(paths, atlas, current)
     print(json.dumps(plan, indent=1))
     return 0
@@ -770,13 +893,34 @@ def build_parser() -> argparse.ArgumentParser:
     add("stop", cmd_stop)
     add("status", cmd_status)
     sp = add("questions", cmd_questions)
-    sp.add_argument("--status", default="open", choices=["open", "answered", "failed", "noted", "all"])
+    sp.add_argument("--status", default="open", choices=["open", "investigating", "answered", "failed", "noted", "all"])
+    sp = add("claim", cmd_claim)
+    sp.add_argument("id")
+    sp = add("progress", cmd_progress)
+    sp.add_argument("--id")
+    sp.add_argument("message")
     sp = add("answer", cmd_answer)
     sp.add_argument("id")
     sp.add_argument("file")
     sp = add("fail", cmd_fail)
     sp.add_argument("id")
     sp.add_argument("--reason", required=True)
+    add("branches", cmd_branches)
+    sp = add("tour-request", cmd_tour_request)
+    sp.add_argument("--base")
+    sp.add_argument("branches", nargs="+")
+    sp = add("tours", cmd_tours)
+    sp.add_argument("--status", default="open", choices=["open", "done", "failed", "all"])
+    sp = add("tour-prepare", cmd_tour_prepare)
+    sp.add_argument("id")
+    sp = add("tour-ingest", cmd_tour_ingest)
+    sp.add_argument("id")
+    sp.add_argument("file")
+    sp = add("tour-fail", cmd_tour_fail)
+    sp.add_argument("id")
+    sp.add_argument("--reason", required=True)
+    sp = add("tour-remove", cmd_tour_remove)
+    sp.add_argument("id")
     sp = add("refresh", cmd_refresh)
     sp.add_argument("--dry-run", action="store_true")
     sp = add("patch", cmd_patch)
@@ -788,7 +932,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.fn(Paths(find_repo(args.repo)), args)
-    except CliError as exc:
+    except (CliError, tours_mod.TourError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 

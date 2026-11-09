@@ -404,6 +404,37 @@ def _ref_count(claim: dict) -> int:
 INTERNAL_LINK = re.compile(r"\[\[([a-z0-9][a-z0-9._-]*)(?:\|[^\]]*)?\]\]")
 
 
+def check_block(block: dict, seen: set[str], step_ids: set[str], errors: list[str], warnings: list[str]) -> None:
+    """Cross-references inside one block: diagram ends, link targets, tree targets."""
+    if block["type"] == "component_diagram":
+        ids = [n["id"] for n in block["nodes"]]
+        if len(set(ids)) != len(ids):
+            errors.append(f"{block['id']}: duplicate diagram node id")
+        for edge in block["edges"]:
+            for end in (edge["from"], edge["to"]):
+                if end not in ids:
+                    errors.append(f"{block['id']}: edge references unknown node {end!r}")
+        for node in block["nodes"]:
+            if "target" in node and node["target"] not in seen:
+                errors.append(f"{block['id']}: node target {node['target']!r} does not exist")
+    elif block["type"] == "sequence_diagram":
+        ids = [p["id"] for p in block["participants"]]
+        for message in block["messages"]:
+            for end in (message["from"], message["to"]):
+                if end not in ids:
+                    errors.append(f"{block['id']}: message references unknown {end!r}")
+    elif block["type"] == "execution_tree":
+        for node in _tree_nodes(block["root"]):
+            if "target" in node and node["target"] not in step_ids:
+                errors.append(f"{block['id']}: tree target {node['target']!r} is not a step")
+            if "ref" not in node and "target" not in node:
+                errors.append(f"{block['id']}: tree node {node['label']!r} needs a ref or a step target")
+    elif block["type"] == "step":
+        count = block["code"].get("end", 0) - block["code"].get("start", 0) + 1
+        if count > 40:
+            warnings.append(f"{block['id']}: snippet is {count} lines; aim for 5-20")
+
+
 def check_structure(atlas: dict) -> Result:
     """Required sections and topics, citations on claims, and internal links."""
     result = Result()
@@ -447,33 +478,7 @@ def check_structure(atlas: dict) -> Result:
                 uncited += 1
                 errors.append(f"{where}: a {certainty} claim needs at least one source reference "
                               "(or certainty 'context'/'absence' if it makes no code claim)")
-        if block["type"] == "component_diagram":
-            ids = [n["id"] for n in block["nodes"]]
-            if len(set(ids)) != len(ids):
-                errors.append(f"{block['id']}: duplicate diagram node id")
-            for edge in block["edges"]:
-                for end in (edge["from"], edge["to"]):
-                    if end not in ids:
-                        errors.append(f"{block['id']}: edge references unknown node {end!r}")
-            for node in block["nodes"]:
-                if "target" in node and node["target"] not in seen:
-                    errors.append(f"{block['id']}: node target {node['target']!r} does not exist")
-        elif block["type"] == "sequence_diagram":
-            ids = [p["id"] for p in block["participants"]]
-            for message in block["messages"]:
-                for end in (message["from"], message["to"]):
-                    if end not in ids:
-                        errors.append(f"{block['id']}: message references unknown {end!r}")
-        elif block["type"] == "execution_tree":
-            for node in _tree_nodes(block["root"]):
-                if "target" in node and node["target"] not in step_ids:
-                    errors.append(f"{block['id']}: tree target {node['target']!r} is not a step")
-                if "ref" not in node and "target" not in node:
-                    errors.append(f"{block['id']}: tree node {node['label']!r} needs a ref or a step target")
-        elif block["type"] == "step":
-            count = block["code"].get("end", 0) - block["code"].get("start", 0) + 1
-            if count > 40:
-                warnings.append(f"{block['id']}: snippet is {count} lines; aim for 5-20")
+        check_block(block, seen, step_ids, errors, warnings)
     for section in atlas["sections"]:
         for group in section["groups"]:
             for other in group.get("related", []):

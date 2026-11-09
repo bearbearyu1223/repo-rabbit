@@ -141,3 +141,50 @@ def atlas() -> dict:
             {"id": "walkthrough", "intro": "One.", "groups": walkthrough},
         ],
     })
+
+
+def git(repo: Path, *args: str) -> str:
+    done = subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@example.com", "-c", "user.name=t", *args],
+                          check=True, capture_output=True, text=True)
+    return done.stdout
+
+
+def commit_all(repo: Path, message: str) -> None:
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", message)
+
+
+def make_branches(repo: Path) -> None:
+    """main, plus two branches that both change app.py and one that also tracks awkward files."""
+    git(repo, "branch", "-M", "main")
+    git(repo, "switch", "-qc", "feature-a")
+    with (repo / "app.py").open("a") as f:
+        f.write("\n\ndef shout(name):\n    return greet(name).upper()\n")
+    (repo / "extra.py").write_text("VALUE = 1\n")
+    commit_all(repo, "Add shout")
+    git(repo, "switch", "-q", "main")
+    git(repo, "switch", "-qc", "feature-b")
+    path = repo / "app.py"
+    path.write_text(path.read_text().replace('return f"hello {name}"', 'return f"hi {name}"'))
+    commit_all(repo, "Say hi")
+    git(repo, "switch", "-q", "main")
+
+
+def tour_draft() -> dict:
+    shout = {"path": "app.py", "anchor": "def shout(name):", "anchor_end": "return greet(name).upper()"}
+    return {
+        "summary": "Adds a louder greeting. See [[w.1]].",
+        "groups": [
+            {"id": "c", "title": "What changed", "topic": "changes", "blocks": [
+                {"id": "c.p", "type": "prose", "text": "Adds `shout`.", "refs": [shout]}]},
+            {"id": "i", "title": "Impact", "topic": "impact", "blocks": [
+                {"id": "i.p", "type": "prose", "text": "Touches [[mod.app|the app]].", "refs": [shout]}]},
+            {"id": "w", "title": "The new path", "topic": "walkthrough", "blocks": [
+                {"id": "w.1", "type": "step", "number": 1, "title": "Shout", "code": shout, "what": "Upper-cases.",
+                 "why": "Louder.", "inputs": "`name`", "outputs": "Text.", "next": "Returns."},
+                {"id": "w.t", "type": "execution_tree", "root": {"label": "shout", "kind": "call", "target": "w.1"}}]},
+            {"id": "r", "title": "Review", "topic": "review", "blocks": [
+                {"id": "r.l", "type": "list", "items": [
+                    {"text": "No test covers `shout`.", "certainty": "absence"}]}]},
+        ],
+    }

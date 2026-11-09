@@ -7,38 +7,70 @@ user asks the agent to investigate them.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+import signal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+import auto
+import tours as tours_mod
 from renderer import Renderer, anchor_index
-from store import Paths, add_question, read_json, write_json
+from store import Paths, add_question, load_questions, read_json, write_json
 from validate import RefError, SourceIndex
 
 MAX_BODY = 64 * 1024
 MAX_QUESTION = 4000
 MAX_SELECTION = 8000
-SECTION_IDS = {"overview", "architecture", "modules", "stack", "workflows", "walkthrough", "notes"}
+SECTION_IDS = {"overview", "architecture", "modules", "stack", "workflows", "walkthrough", "tours", "notes"}
 _ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,118}$")
+_QUESTION_ID = re.compile(r"^q_[0-9a-f]{12}$")
+MAX_THREAD = 30
 
 
 class BadRequest(ValueError):
     pass
 
 
-def validate_question(payload: Any, atlas: dict, repo: Path) -> dict:
-    """Check a submitted question field by field; return only the known fields."""
-    if not isinstance(payload, dict):
-        raise BadRequest("the body must be a JSON object")
+def _question_text(payload: dict) -> str:
     question = payload.get("question")
     if not isinstance(question, str) or not question.strip():
         raise BadRequest("write a question or note first")
     if len(question) > MAX_QUESTION:
         raise BadRequest(f"questions are limited to {MAX_QUESTION} characters")
+    return question
+
+
+def validate_follow_up(payload: dict, existing: list[dict]) -> dict:
+    """A follow-up takes its place in the Atlas from its parent, never from the request."""
+    question = _question_text(payload)
+    parent_id = payload["follow_up_to"]
+    if not isinstance(parent_id, str) or not _QUESTION_ID.match(parent_id):
+        raise BadRequest("invalid follow_up_to")
+    parent = next((q for q in existing if q.get("id") == parent_id), None)
+    if parent is None:
+        raise BadRequest("that question no longer exists (reload the page)")
+    if parent.get("kind") != "question":
+        raise BadRequest("only questions can have follow-ups")
+    root_id = parent.get("root_id") or parent["id"]
+    if sum(q.get("root_id") == root_id for q in existing) >= MAX_THREAD:
+        raise BadRequest(f"this conversation has reached {MAX_THREAD} follow-ups; start a new question")
+    inherited = ("section_id", "block_id", "selected_text", "text_offset", "source_file", "source_start", "source_end")
+    return {"question": question.strip(), "kind": "question", "parent_id": parent_id, "root_id": root_id,
+            **{key: parent.get(key) for key in inherited}}
+
+
+def validate_question(payload: Any, atlas: dict, repo: Path, ready: Any = (), existing: Any = ()) -> dict:
+    """Check a submitted question field by field; return only the known fields."""
+    if not isinstance(payload, dict):
+        raise BadRequest("the body must be a JSON object")
+    if payload.get("follow_up_to") is not None:
+        return validate_follow_up(payload, list(existing))
+    question = _question_text(payload)
     kind = payload.get("kind", "question")
     if kind not in ("question", "note"):
         raise BadRequest("kind must be 'question' or 'note'")
@@ -47,7 +79,7 @@ def validate_question(payload: Any, atlas: dict, repo: Path) -> dict:
         raise BadRequest("unknown section_id")
     if not isinstance(block_id, str) or not _ID.match(block_id):
         raise BadRequest("invalid block_id")
-    anchors = anchor_index(atlas)
+    anchors = anchor_index(atlas, ready)
     if block_id not in anchors:
         raise BadRequest("that block is not in the Atlas (reload the page)")
     if anchors[block_id] != section_id:
@@ -62,7 +94,8 @@ def validate_question(payload: Any, atlas: dict, repo: Path) -> dict:
              "block_id": block_id, "selected_text": selected, "text_offset": offset}
     source = payload.get("source_file")
     if source is not None:
-        clean.update(_validate_source(payload, source, repo))
+        tour = next((t for t in ready if block_id.removeprefix("summary.").split(".", 1)[0] == t["id"]), None)
+        clean.update(_validate_source(payload, source, tour["src"] if tour else repo))
     return clean
 
 
@@ -120,6 +153,13 @@ class Handler(BaseHTTPRequestHandler):
         port = self.server.server_address[1]
         return origin in (f"http://127.0.0.1:{port}", f"http://localhost:{port}")
 
+    def _notes(self, renderer: Renderer) -> dict:
+        """The page's feed, with auto-start state folded into its change marker."""
+        notes = renderer.notes_payload()
+        state = self.server.runner.state()
+        digest = hashlib.sha256(json.dumps(state, sort_keys=True).encode()).hexdigest()[:8]
+        return {**notes, "auto": state, "version": f"{notes['version']}-{digest}"}
+
     def _renderer(self) -> Renderer | None:
         atlas = read_json(self.paths.atlas)
         return Renderer(self.paths, atlas) if atlas else None
@@ -136,7 +176,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(404, {"error": "no Atlas yet; run the Explore workflow"})
         elif route == "/api/notes":
             renderer = self._renderer()
-            self._json(200 if renderer else 404, renderer.notes_payload() if renderer else {"error": "no Atlas"})
+            self._json(200 if renderer else 404, self._notes(renderer) if renderer else {"error": "no Atlas"})
+        elif route == "/api/branches":
+            try:
+                self._json(200, tours_mod.list_branches(self.paths.repo))
+            except tours_mod.TourError as exc:
+                self._json(400, {"error": str(exc)})
         elif route == "/api/health":
             self._json(200, {"app": "repo-rabbit", "repo": str(self.paths.repo), "pid": os.getpid()})
         else:
@@ -146,7 +191,8 @@ class Handler(BaseHTTPRequestHandler):
         if not (self._host_ok() and self._origin_ok()):
             self._json(403, {"error": "cross-origin request refused"})
             return
-        if urlsplit(self.path).path != "/api/questions":
+        route = urlsplit(self.path).path
+        if route not in ("/api/questions", "/api/tours", "/api/auto"):
             self._json(404, {"error": "not found"})
             return
         # Requiring this type forces a CORS preflight, which this server never approves.
@@ -167,18 +213,33 @@ class Handler(BaseHTTPRequestHandler):
             atlas = read_json(self.paths.atlas)
             if atlas is None:
                 raise BadRequest("no Atlas yet")
-            record = add_question(self.paths, validate_question(payload, atlas, self.paths.repo))
-        except (BadRequest, json.JSONDecodeError, UnicodeDecodeError) as exc:
-            message = str(exc) if isinstance(exc, BadRequest) else "the body is not valid JSON"
+            if route == "/api/questions":
+                ready = tours_mod.load_ready(self.paths)
+                fields = validate_question(payload, atlas, self.paths.repo, ready, load_questions(self.paths))
+                created: dict = {"question": add_question(self.paths, fields)}
+                if created["question"]["kind"] == "question" and auto.is_enabled(self.paths):
+                    self.server.runner.notify()
+            elif route == "/api/auto":
+                if not isinstance(payload, dict) or not isinstance(payload.get("enabled"), bool):
+                    raise BadRequest("enabled must be true or false")
+                created = {"auto": self.server.runner.set_enabled(payload["enabled"])}
+            else:
+                if not isinstance(payload, dict):
+                    raise BadRequest("the body must be a JSON object")
+                created = {"tours": tours_mod.request_tours(self.paths, payload.get("base"), payload.get("branches"))}
+        except (BadRequest, tours_mod.TourError, auto.AutoError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            known = (BadRequest, tours_mod.TourError, auto.AutoError)
+            message = str(exc) if isinstance(exc, known) else "the body is not valid JSON"
             self._json(400, {"error": message})
             return
-        self._json(201, {"question": record, "notes": Renderer(self.paths, atlas).notes_payload()})
+        self._json(201, {**created, "notes": self._notes(Renderer(self.paths, atlas))})
 
 
 def make_server(paths: Paths, port: int = 0) -> ThreadingHTTPServer:
     handler = type("BoundHandler", (Handler,), {"paths": paths})
     server = ThreadingHTTPServer(("127.0.0.1", port), handler)
     server.daemon_threads = True
+    server.runner = auto.AutoRunner(paths)
     return server
 
 
@@ -189,7 +250,13 @@ def serve_forever(paths: Paths, port: int) -> None:
     except OSError:
         server = make_server(paths, 0)  # The preferred port is taken; any free one will do.
     write_json(paths.server_state, {"pid": os.getpid(), "port": server.server_address[1]})
+
+    def stop(_signum: int, _frame: object) -> None:
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, stop)  # So a running investigation is stopped with the server.
     try:
         server.serve_forever()
     finally:
+        server.runner.close()
         server.server_close()

@@ -9,6 +9,7 @@ here as inline SVG, so the page makes no network requests.
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import html
 import json
@@ -18,7 +19,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 from urllib.parse import quote
 
-from store import Paths, load_answers, load_questions, read_json, update_questions
+import tours as tours_mod
+from store import Paths, load_activity, load_answers, load_questions, load_tours, read_json, update_questions
 from validate import RefError, SourceIndex, iter_refs, redact, ref_state, resolve_ref
 
 TEMPLATE = Path(__file__).resolve().parent.parent / "templates" / "atlas.html"
@@ -461,9 +463,19 @@ def sequence_svg(block: dict) -> str:
 # -- the page -------------------------------------------------------------------------
 
 
-def anchor_index(atlas: dict) -> dict[str, str]:
+def anchor_index(atlas: dict, ready: Iterable[dict] = ()) -> dict[str, str]:
     """Every id a question may attach to, with the section that holds it."""
     ids: dict[str, str] = {"coverage.report": "overview", "next.steps": "overview"}
+    for tour in ready:
+        ids[f"{tour['id']}.summary"] = "tours"
+        for number in range(tour["meta"]["files_changed"]):
+            ids[f"{tour['id']}.file.{number}"] = "tours"
+        for group in tour["body"]["groups"]:
+            ids[group["id"]] = "tours"
+            if group.get("summary"):
+                ids[f"summary.{group['id']}"] = "tours"
+            for block in group["blocks"]:
+                ids[block["id"]] = "tours"
     for section in atlas["sections"]:
         ids[f"intro.{section['id']}"] = section["id"]
         for group in section["groups"]:
@@ -489,19 +501,37 @@ class Renderer:
         self.atlas = atlas
         self.ide = ide if ide in IDES else "vscode"
         self.index = SourceIndex(paths.repo)
-        self.anchors = anchor_index(atlas)
+        self.ready = tours_mod.load_ready(paths)
+        self.anchors = anchor_index(atlas, self.ready)
         self.anchor_ids = set(self.anchors)
+        self.changed_lines: dict[str, list[int]] = {}
         self.link_titles: dict[str, str] = {}
         self.step_code: dict[str, dict] = {}
-        for section in atlas["sections"]:
-            for group in section["groups"]:
-                self.link_titles[group["id"]] = group["title"]
-                for block in group["blocks"]:
-                    if block["type"] == "step":
-                        self.step_code[block["id"]] = block["code"]
-                        self.link_titles[block["id"]] = f"Step {block['number']}: {plain(block['title'])}"
-                    elif block.get("title"):
-                        self.link_titles[block["id"]] = plain(block["title"])
+        all_groups = [g for section in atlas["sections"] for g in section["groups"]]
+        all_groups += [g for tour in self.ready for g in tour["body"]["groups"]]
+        for group in all_groups:
+            self.link_titles[group["id"]] = group["title"]
+            for block in group["blocks"]:
+                if block["type"] == "step":
+                    self.step_code[block["id"]] = block["code"]
+                    self.link_titles[block["id"]] = f"Step {block['number']}: {plain(block['title'])}"
+                elif block.get("title"):
+                    self.link_titles[block["id"]] = plain(block["title"])
+
+    @contextlib.contextmanager
+    def in_tour(self, tour: dict):
+        """Resolve references against the branch's snapshot instead of the working tree."""
+        saved = self.index, self.changed_lines
+        self.index = SourceIndex(tour["src"])
+        self.changed_lines = tour["meta"].get("changed_lines", {})
+        try:
+            yield
+        finally:
+            self.index, self.changed_lines = saved
+
+    def tour_of(self, block_id: str) -> dict | None:
+        head = block_id.removeprefix("summary.").split(".", 1)[0]
+        return next((t for t in self.ready if t["id"] == head), None)
 
     def label_links(self, markup: str) -> str:
         """Give an unlabeled ``[[id]]`` link the title of what it points to."""
@@ -545,8 +575,9 @@ class Renderer:
             return f'<p class="code-missing">{esc(ref["path"])} is no longer available.</p>'
         source = redact("\n".join(lines[start - 1:end]))
         rendered = highlight_lines(source, ref["path"])
-        body = "\n".join(f'<span class="line" data-line="{start + i}" data-n="{start + i}">{line or " "}</span>'
-                         for i, line in enumerate(rendered))
+        added = set(self.changed_lines.get(ref["path"], ()))
+        body = "\n".join(f'<span class="line{" changed" if start + i in added else ""}" data-line="{start + i}" '
+                         f'data-n="{start + i}">{line or " "}</span>' for i, line in enumerate(rendered))
         return (f'<figure class="snippet"><figcaption>{self.ref_link(ref)}</figcaption>'
                 f'<pre class="code" data-path="{esc(ref["path"])}"><code>{body}</code></pre></figure>')
 
@@ -689,6 +720,80 @@ class Renderer:
                 f'<section class="group" id="x-next" data-title="Where to dig next"><h3>Where to dig next</h3>'
                 f'<div class="block" id="x-next.steps" data-block-id="next.steps"><ol>{next_items}</ol></div></section>')
 
+    def tours_html(self) -> str:
+        changes = {t["id"]: tours_mod.load_changes(self.paths, t["id"]) for t in self.ready}
+        try:
+            current = {b["name"]: b["sha"] for b in tours_mod.list_branches(self.paths.repo)["branches"]}
+        except tours_mod.TourError:
+            current = {}
+        overlap = ""
+        rows = tours_mod.overlaps(self.ready, changes)
+        if rows:
+            cells = "".join(f"<tr><td><code>{esc(r['path'])}</code></td><td>{esc(', '.join(r['branches']))}</td></tr>" for r in rows)
+            overlap = ('<section class="group" id="x-tours-overlap" data-title="Files changed by more than one branch">'
+                       '<h3>Files changed by more than one branch</h3><p class="caption">In the set you selected, these files '
+                       'were changed by several branches, so check them first when merging. This compares file names and does '
+                       f'not attempt a merge.</p><div class="table-wrap"><table><thead><tr><th>File</th><th>Branches</th></tr></thead><tbody>{cells}</tbody></table></div></section>')
+        tours = "".join(self.tour_html(t, changes[t["id"]], current) for t in reversed(self.ready))
+        return (f'<section class="pane" id="s-tours" data-section="tours"><header class="pane-head"><p class="eyebrow">Side Tunnels</p>'
+                '<h2>Branch Tours</h2><div class="intro"><p>Pick the branches you want to understand. Each tour explains what the branch '
+                'changes, what that affects, and how the new code runs, without touching your checkout.</p></div></header>'
+                f'<div id="tour-picker"></div><div id="tour-status"></div>{overlap}{tours}</section>')
+
+    def tour_html(self, tour: dict, changes: list[dict], current: dict[str, str]) -> str:
+        tid, meta = esc(tour["id"]), tour["meta"]
+        with self.in_tour(tour):
+            groups = "".join(self.group_html(g) for g in tour["body"]["groups"])
+            files = "".join(self.diff_html(tour, i, f) for i, f in enumerate(changes))
+        moved = ""
+        if current.get(tour["branch"]) != meta["sha"]:
+            gone = tour["branch"] not in current
+            moved = (f'<div class="stale-banner" role="note"><strong>{"This branch no longer exists." if gone else "This branch has new commits."}</strong> '
+                     'The tour describes the snapshot below. Select the branch again for a new tour.</div>')
+        chips = "".join(f'<a class="chip" href="#x-{esc(a["id"])}">{esc(a["title"])}</a>' for a in meta["affected"])
+        affected = f'<nav class="related" aria-label="Affected Atlas sections">Touches {chips}</nav>' if chips else ""
+        commits = "".join(f'<li><code>{esc(c["sha"])}</code> {esc(c["subject"])}</li>' for c in meta["commits"][:25])
+        extra = len(meta["commits"]) - 25
+        if extra > 0:
+            commits += f"<li>…and {extra} more</li>"
+        cut = '<div class="stale-banner" role="note">This diff was too large to show in full. Files marked "cut short" are incomplete here.</div>' if meta["diff_truncated"] else ""
+        return (f'<details class="group tour" id="x-{tid}" data-title="{esc(tour["branch"])}" open><summary><h3><code>{esc(tour["branch"])}</code></h3>'
+                f'<span class="tour-stat">onto <code>{esc(tour["base"])}</code> · {len(meta["commits"])} commit(s) · {int(meta["files_changed"])} file(s) · '
+                f'<span class="plus">+{int(meta["additions"])}</span> <span class="minus">−{int(meta["deletions"])}</span> · <code>{esc(meta["sha"][:8])}</code></span></summary>'
+                f'<div class="group-body">{moved}{affected}<div class="block" id="x-{tid}.summary" data-block-id="{tid}.summary"><div class="text">{rich(tour["body"]["summary"])}</div></div>'
+                f'{groups}<section class="group"><h3>Changed files</h3>{cut}{files}</section>'
+                f'<section class="group"><h3>Commits</h3><ul class="commits">{commits}</ul></section></div></details>')
+
+    def diff_html(self, tour: dict, number: int, record: dict) -> str:
+        bid = f'{esc(tour["id"])}.file.{number}'
+        title = f'<code>{esc(record["path"])}</code>'
+        if record.get("old_path"):
+            title = f'<code>{esc(record["old_path"])}</code> → {title}'
+        body: list[str] = []
+        first_new = None
+        for hunk in record["hunks"]:
+            body.append(f'<span class="line hunk">{esc(hunk["header"])}</span>')
+            for kind, old, new, text in hunk["lines"]:
+                first_new = first_new or (new if kind == "+" else None)
+                cls = {"+": "add", "-": "del", " ": "ctx"}[kind]
+                attrs = f' data-line="{int(new)}" data-n="{int(new)}"' if new else f' data-n="{int(old)}"'
+                body.append(f'<span class="line {cls}"{attrs}>{esc(text) or " "}</span>')
+        link = ""
+        if record["status"] != "deleted" and self_exists(tour, record):
+            urls = ide_urls(str(tour["src"] / record["path"]), first_new or 1)
+            link = (f'<a class="ref ref-fresh" href="{esc(urls[self.ide])}" title="Open this branch\'s version" data-vscode="{esc(urls["vscode"])}" '
+                    f'data-cursor="{esc(urls["cursor"])}" data-idea="{esc(urls["idea"])}">open</a>')
+        notes = ""
+        if record.get("withheld"):
+            notes = '<p class="caption">Contents withheld because this looks like a credentials file.</p>'
+        elif record.get("binary"):
+            notes = '<p class="caption">Binary file.</p>'
+        elif record.get("truncated"):
+            notes = '<p class="caption">Cut short: this file\'s diff is too long to show in full.</p>'
+        code = f'<pre class="code diff" data-path="{esc(record["path"])}"><code>{chr(10).join(body)}</code></pre>' if body else ""
+        return (f'<details class="diff-file" id="x-{bid}" data-block-id="{bid}"><summary><span class="status">{esc(record["status"])}</span> {title} '
+                f'<span class="plus">+{int(record["additions"])}</span> <span class="minus">−{int(record["deletions"])}</span> {link}</summary>{notes}{code}</details>')
+
     def nav_html(self) -> str:
         out = []
         for section in self.atlas["sections"]:
@@ -698,6 +803,9 @@ class Renderer:
             out.append(f'<li class="nav-item" data-nav="{esc(sid)}"><a class="nav-main" href="#s-{esc(sid)}">'
                        f'<span class="nav-trail">{esc(trail)}</span><span class="nav-tech">{esc(technical)}</span></a>'
                        f'<ul class="nav-sub">{subs}</ul></li>')
+        subs = "".join(f'<li><a href="#x-{esc(t["id"])}">{esc(t["branch"])}</a></li>' for t in reversed(self.ready))
+        out.append('<li class="nav-item" data-nav="tours"><a class="nav-main" href="#s-tours"><span class="nav-trail">Side Tunnels</span>'
+                   f'<span class="nav-tech">Branch Tours</span></a><ul class="nav-sub">{subs}</ul></li>')
         out.append('<li class="nav-item" data-nav="notes"><a class="nav-main" href="#s-notes">'
                    '<span class="nav-trail">Rabbit Notes <b id="notes-count" class="count" hidden></b></span>'
                    '<span class="nav-tech">Questions and Answers</span></a></li>')
@@ -750,6 +858,27 @@ class Renderer:
                 for block in group["blocks"]:
                     if block["id"] == block_id:
                         return self.block_text(block)
+        return self.tour_anchor_text(block_id)
+
+    def tour_anchor_text(self, block_id: str) -> str | None:
+        tour = self.tour_of(block_id)
+        if tour is None:
+            return None
+        if block_id == f"{tour['id']}.summary":
+            return plain(tour["body"]["summary"])
+        if ".file." in block_id:
+            lines = [row[3] for f in tours_mod.load_changes(self.paths, tour["id"]) for h in f["hunks"] for row in h["lines"]]
+            heads = [f["path"] for f in tours_mod.load_changes(self.paths, tour["id"])]
+            return "\n".join([*lines, *heads, "added", "modified", "deleted", "renamed"])
+        with self.in_tour(tour):
+            for group in tour["body"]["groups"]:
+                if block_id == group["id"]:
+                    return self.block_text(group)
+                if block_id == f"summary.{group['id']}":
+                    return plain(group.get("summary", ""))
+                for block in group["blocks"]:
+                    if block["id"] == block_id:
+                        return self.block_text(block)
         return None
 
     def reconcile_anchors(self) -> int:
@@ -767,6 +896,10 @@ class Renderer:
                 changes[question["id"]] = {"anchor": state}
         return update_questions(self.paths, changes)
 
+    def answer_context(self, answer: dict):
+        tour = next((t for t in self.ready if t["id"] == answer.get("tour_id")), None)
+        return self.in_tour(tour) if tour else contextlib.nullcontext()
+
     def answer_html(self, answer: dict) -> str:
         return self.label_links(f'<div class="text">{rich(answer["text"])}</div>{self.crumbs(answer)}')
 
@@ -774,12 +907,22 @@ class Renderer:
         questions = load_questions(self.paths)
         answers: dict[str, list[dict]] = {}
         for answer in load_answers(self.paths):
-            stale = any(ref_state(r, self.index)[0] != "fresh" for r in answer.get("refs", []))
-            answers.setdefault(answer["question_id"], []).append({
-                "id": answer["id"], "created_at": answer["created_at"],
-                "html": self.answer_html(answer), "stale": stale,
-            })
-        payload = {"questions": questions, "answers": answers}
+            with self.answer_context(answer):
+                stale = any(ref_state(r, self.index)[0] != "fresh" for r in answer.get("refs", []))
+                answers.setdefault(answer["question_id"], []).append({
+                    "id": answer["id"], "created_at": answer["created_at"],
+                    "html": self.answer_html(answer), "stale": stale,
+                })
+        activity: dict[str, list[dict]] = {}
+        latest = None
+        for entry in load_activity(self.paths):
+            row = {"at": entry.get("at", ""), "message": str(entry.get("message", ""))}
+            latest = {**row, "question_id": entry.get("question_id")}
+            if entry.get("question_id"):
+                activity.setdefault(entry["question_id"], []).append(row)
+        payload = {"questions": questions, "answers": answers,
+                   "activity": {k: v[-40:] for k, v in activity.items()}, "latest": latest,
+                   "tours": load_tours(self.paths)}
         digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
         return {**payload, "version": digest}
 
@@ -795,7 +938,8 @@ class Renderer:
         manifest = read_json(self.paths.manifest, {}) or {}
         revision = manifest.get("revision", {})
         meta = {"ide": self.ide, "project": self.atlas["project"]["name"],
-                "sections": {s: list(v) for s, v in SECTIONS.items()}}
+                "sections": {**{s: list(v) for s, v in SECTIONS.items()}, "tours": ["Side Tunnels", "Branch Tours"]},
+                "tours_ready": [t["id"] for t in self.ready]}
         rev_text = (revision.get("head") or "no git revision")[:10]
         if revision.get("dirty"):
             rev_text += " + local changes"
@@ -807,11 +951,15 @@ class Renderer:
             "REVISION": esc(rev_text),
             "UPDATED": esc(manifest.get("updated_at", "")),
             "NAV": self.nav_html(),
-            "CONTENT": self.label_links("".join(self.section_html(s) for s in self.atlas["sections"])),
+            "CONTENT": self.label_links("".join(self.section_html(s) for s in self.atlas["sections"]) + self.tours_html()),
             "META_JSON": _json_island(meta),
             "NOTES_JSON": _json_island(self.notes_payload()),
         }
         return re.sub(r"\{\{([A-Z_]+)\}\}", lambda m: values[m.group(1)], template)
+
+
+def self_exists(tour: dict, record: dict) -> bool:
+    return (tour["src"] / record["path"]).is_file()
 
 
 def _json_island(value: Any) -> str:

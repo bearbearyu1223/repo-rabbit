@@ -185,6 +185,34 @@ summary.tree-row > * { margin-right: 8px; }
 .cov-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; font-size: 14px; }
 .cov-grid ul { margin: 0; padding-left: 18px; }
 
+.tour-stat { color: var(--muted); font-size: 13px; margin-left: 10px; }
+.plus { color: var(--ok); font-family: var(--mono); font-size: 12.5px; }
+.minus { color: var(--bad); font-family: var(--mono); font-size: 12.5px; }
+.commits { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+.commits li { margin-bottom: 3px; overflow-wrap: anywhere; }
+.diff-file { border: 1px solid var(--line); border-radius: 7px; margin-bottom: 6px; background: var(--surface); overflow: hidden; }
+.diff-file summary { cursor: pointer; padding: 6px 12px; font-size: 13.5px; overflow-wrap: anywhere; }
+.diff-file pre.code { background: var(--sunken); border-top: 1px solid var(--line); }
+.line.add { background: var(--ok-soft); }
+.line.del { background: var(--bad-soft); }
+.line.hunk { color: var(--muted); font-style: italic; }
+.line.changed { box-shadow: inset 3px 0 0 var(--ok); background: var(--ok-soft); }
+#tour-picker, #tour-status:not(:empty) { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; }
+.pick-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 8px; font-size: 14px; }
+.pick-row input, .pick-row select { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; max-width: 100%; }
+.pick-row .grow { flex: 1; min-width: 120px; }
+.pick-list { max-height: 260px; overflow-y: auto; border: 1px solid var(--line); border-radius: 7px; }
+.pick-list label { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; padding: 5px 10px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 14px; }
+.pick-list label:last-child { border-bottom: 0; }
+.pick-list label:hover { background: var(--sunken); }
+.pick-list small { color: var(--muted); overflow-wrap: anywhere; }
+.pick-list code { overflow-wrap: anywhere; }
+#tour-go { background: var(--accent); border: 0; border-radius: 7px; color: var(--bg); cursor: pointer; font-weight: 600; padding: 5px 14px; }
+#tour-go:disabled { opacity: .5; cursor: not-allowed; }
+#tour-msg { color: var(--bad); font-size: 13.5px; margin-top: 6px; }
+.tour-row { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font-size: 14px; margin-bottom: 4px; overflow-wrap: anywhere; }
+.st-touring { color: var(--accent); background: var(--accent-soft); }
+.st-done { color: var(--ok); background: var(--ok-soft); }
 mark.note { background: var(--mark); color: inherit; border-radius: 2px; cursor: pointer; }
 mark.note.answered { background: var(--mark-answered); }
 .block.note-anchored-svg { outline: 2px dashed var(--accent); outline-offset: 2px; }
@@ -195,9 +223,41 @@ mark.note.answered { background: var(--mark-answered); }
 .st-open { color: var(--warn); background: var(--warn-soft); }
 .st-answered { color: var(--ok); background: var(--ok-soft); }
 .st-failed, .st-orphaned { color: var(--bad); background: var(--bad-soft); }
+.st-investigating { color: var(--accent); background: var(--accent-soft); }
+.st-investigating::before, #live::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-right: 5px; animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .st-investigating::before, #live::before { animation: none; } }
+.note-wait { color: var(--muted); font-size: 13.5px; margin-top: 6px; }
+.timeline { margin-top: 7px; font-size: 13px; color: var(--muted); }
+.timeline summary { cursor: pointer; }
+.timeline ol { list-style: none; margin: 5px 0 0; padding: 0 0 0 10px; border-left: 2px dotted var(--line); }
+.timeline li { padding: 1px 0 1px 8px; overflow-wrap: anywhere; }
+.timeline time { font-family: var(--mono); font-size: 11.5px; margin-right: 7px; }
+#flow { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; }
+#flow ol { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 22px; margin: 0 0 8px; padding: 0; font-size: 13.5px; color: var(--muted); }
+#flow li b { display: inline-block; width: 18px; height: 18px; line-height: 18px; text-align: center; border-radius: 50%; background: var(--sunken); font-size: 11px; margin-right: 6px; }
+#flow li.now { color: var(--ink); font-weight: 600; }
+#flow li.now b { background: var(--accent); color: var(--bg); }
+#auto-row { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; font-size: 13.5px; }
+#auto-row label { display: inline-flex; gap: 7px; align-items: center; cursor: pointer; font-weight: 600; }
+#auto-row small { display: block; color: var(--muted); overflow-wrap: anywhere; }
+#flow-msg { font-size: 14.5px; overflow-wrap: anywhere; }
+.prompt-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
+.prompt-row code { font-size: 13px; padding: 4px 8px; }
+.prompt-row button { background: var(--accent); border: 0; border-radius: 6px; color: var(--bg); cursor: pointer; font-size: 13px; font-weight: 600; padding: 3px 11px; }
+#live[hidden] { display: none; }
+#live { display: block; color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .note-q { font-weight: 600; margin: 5px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .note-quote { color: var(--muted); border-left: 3px solid var(--line); padding-left: 8px; margin: 5px 0; font-size: 13.5px; white-space: pre-wrap; max-height: 5.5em; overflow: hidden; }
 .note-answer { border-top: 1px solid var(--line); padding-top: 7px; margin-top: 7px; }
+.note-turn { border-top: 1px dashed var(--line); margin-top: 10px; padding-top: 8px; }
+.note-turn .note-q { margin-top: 3px; }
+.followup { margin-top: 10px; }
+.followup textarea { width: 100%; min-height: 64px; padding: 7px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); resize: vertical; font-size: 14px; }
+.followup .row { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+.followup button.send { background: var(--accent); border: 0; border-radius: 6px; color: var(--bg); cursor: pointer; font-size: 13px; font-weight: 600; padding: 3px 11px; }
+.followup button.send:disabled { opacity: .5; cursor: not-allowed; }
+.followup .msg { color: var(--bad); font-size: 13px; }
 .note-error { color: var(--bad); margin-top: 5px; }
 .link-btn { background: none; border: 0; padding: 0; color: var(--link); cursor: pointer; font-size: 12.5px; }
 .filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
@@ -236,6 +296,7 @@ dialog textarea { width: 100%; min-height: 96px; padding: 8px; border: 1px solid
   </div>
   <div class="search"><input id="search" type="search" placeholder="Search the Atlas ( / )" aria-label="Search the Atlas" autocomplete="off"><div id="search-results" hidden></div></div>
   <nav aria-label="Atlas sections"><ul class="trail">{{NAV}}</ul></nav>
+  <a id="live" href="#s-notes" hidden></a>
   <div class="settings">
     <select id="ide" aria-label="Open source links in"><option value="vscode">VS Code</option><option value="cursor">Cursor</option><option value="idea">IntelliJ IDEA</option></select>
     <button id="theme" type="button" aria-label="Switch color theme">Theme</button>
@@ -247,7 +308,8 @@ dialog textarea { width: 100%; min-height: 96px; padding: 8px; border: 1px solid
   {{CONTENT}}
   <section class="pane" id="s-notes" data-section="notes">
     <header class="pane-head"><p class="eyebrow">Rabbit Notes</p><h2>Questions and Answers</h2>
-    <div class="intro"><p>Highlight anything in the Atlas and choose Ask RepoRabbit. Then ask Claude to “ask repo-rabbit to investigate my open questions”, and the answers appear here and beside what you highlighted.</p></div></header>
+    <div class="intro"><p>Highlight anything in the Atlas and choose Ask RepoRabbit. Answers appear here and beside what you highlighted.</p></div></header>
+    <div id="flow"><ol id="flow-steps"></ol><div id="flow-msg" role="status"></div><div id="auto-row" hidden><label><input type="checkbox" id="auto-on"> Start investigating automatically</label><small id="auto-note"></small></div></div>
     <div class="filters" id="filters" role="group" aria-label="Filter notes"></div>
     <div id="notes-list"></div>
   </section>
@@ -475,11 +537,221 @@ dialog textarea { width: 100%; min-height: 96px; padding: 8px; border: 1px solid
     return e;
   }
   function statusLabel(q) {
-    return { open: "open", answered: "answered", failed: "failed", noted: "note" }[q.status] || q.status;
+    return { open: "waiting", investigating: "investigating", answered: "answered", failed: "failed", noted: "note" }[q.status] || q.status;
   }
   function when(iso) {
     var d = new Date(iso);
     return isNaN(d) ? "" : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  }
+  function clock(iso) {
+    var d = new Date(iso);
+    return isNaN(d) ? "" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+  function age(iso) {
+    var seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+    return seconds < 60 ? "just now" : seconds < 3600 ? Math.round(seconds / 60) + " min ago" : Math.round(seconds / 3600) + " h ago";
+  }
+  var PROMPT = "Ask repo-rabbit to investigate my open questions.";
+  var STALLED = 15 * 60 * 1000;
+  function promptRow(text) {
+    var words = text || PROMPT;
+    var row = el("div", "prompt-row"), code = el("code", "", words), button = el("button", "", "Copy");
+    button.type = "button";
+    button.addEventListener("click", function () {
+      var done = function () { button.textContent = "Copied"; setTimeout(function () { button.textContent = "Copy"; }, 1500); };
+      var select = function () { var r = document.createRange(); r.selectNodeContents(code); var s = getSelection(); s.removeAllRanges(); s.addRange(r); };
+      if (navigator.clipboard) navigator.clipboard.writeText(words).then(done, select); else select();
+    });
+    row.appendChild(code);
+    row.appendChild(button);
+    return row;
+  }
+  function renderAuto() {
+    var auto = NOTES.auto, row = $("auto-row"), box = $("auto-on"), note = $("auto-note");
+    row.hidden = !auto;
+    if (!auto) return;
+    box.checked = auto.enabled;
+    box.disabled = !auto.available && !auto.enabled;
+    note.textContent = auto.last_error || (auto.reason && !auto.enabled ? auto.reason
+      : auto.enabled ? "On for this repository. Each saved question starts RepoRabbit in the background and uses your Claude usage."
+      : "Off. Turn it on and saved questions start RepoRabbit by themselves.");
+  }
+  $("auto-on").addEventListener("change", function () {
+    var box = this, on = box.checked;
+    if (on && !window.confirm("Start RepoRabbit automatically for this repository?\n\nEach saved question will run Claude Code in the background, with no further prompt, and use your Claude usage (often around $0.30 to $0.60 per question). Questions already waiting start right away.\n\nYou can turn this off at any time.")) {
+      box.checked = false;
+      return;
+    }
+    fetch("api/auto", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: on }) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (res.ok) { NOTES = res.j.notes; renderNotes(); return; }
+        box.checked = !on;
+        $("auto-note").textContent = res.j.error || "Could not change this setting.";
+      })
+      .catch(function () { box.checked = !on; $("auto-note").textContent = "The local server is not answering."; });
+  });
+  function renderFlow() {
+    var waiting = NOTES.questions.filter(function (q) { return q.status === "open"; }).length;
+    var working = NOTES.questions.filter(function (q) { return q.status === "investigating"; });
+    var answered = NOTES.questions.filter(function (q) { return q.status === "answered"; }).length;
+    var auto = NOTES.auto;
+    renderAuto();
+    var now = working.length ? 2 : waiting ? 2 : answered ? 3 : 1;
+    var steps = $("flow-steps"), msg = $("flow-msg");
+    steps.replaceChildren();
+    ["You highlight and ask", "RepoRabbit investigates in Claude Code", "The answer appears here"].forEach(function (text, i) {
+      var li = el("li", i + 1 === now ? "now" : "");
+      li.appendChild(el("b", "", String(i + 1)));
+      li.appendChild(document.createTextNode(text));
+      steps.appendChild(li);
+    });
+    msg.replaceChildren();
+    if (working.length) {
+      var last = NOTES.latest;
+      var stalled = !last || Date.now() - new Date(last.at).getTime() > STALLED;
+      if (stalled && !(auto && auto.running)) {
+        msg.appendChild(el("div", "", "RepoRabbit hasn't reported anything for a while, so it may have stopped. Paste this into Claude Code to resume:"));
+        msg.appendChild(promptRow());
+      } else {
+        msg.textContent = "Working on " + working.length + (working.length === 1 ? " question: " : " questions: ") + last.message + " (" + age(last.at) + ")";
+      }
+    } else if (waiting && auto && auto.enabled && !auto.last_error) {
+      msg.textContent = (auto.running ? "RepoRabbit is starting on " : "RepoRabbit will start shortly on ") + waiting + (waiting === 1 ? " question." : " questions.");
+    } else if (waiting) {
+      msg.appendChild(el("div", "", waiting + (waiting === 1 ? " question is" : " questions are") + " waiting. RepoRabbit only runs when you ask, so paste this into Claude Code:"));
+      msg.appendChild(promptRow());
+    } else if (answered) {
+      msg.textContent = "All caught up. Highlight something else whenever you're curious.";
+    } else {
+      msg.textContent = "No questions yet. Highlight any text or code in the Atlas to ask one.";
+    }
+    if (!served && (working.length || waiting)) msg.appendChild(el("div", "note-wait", "This page was opened as a file, so reload it to see new answers."));
+  }
+  function renderLive() {
+    var live = $("live"), last = NOTES.latest;
+    var fresh = last && Date.now() - new Date(last.at).getTime() < 120000;
+    live.hidden = !fresh;
+    if (fresh) { live.textContent = last.message; live.title = last.message; }
+  }
+  // -- branch tours ---------------------------------------------------------------
+  var TOUR_PROMPT = "Ask repo-rabbit to tour my selected branches.";
+  var branches = null, chosen = {};
+  function pickerRow(b) {
+    var label = el("label"), box = el("input");
+    box.type = "checkbox";
+    box.value = b.name;
+    box.checked = !!chosen[b.name];
+    box.addEventListener("change", function () {
+      if (box.checked) chosen[b.name] = true; else delete chosen[b.name];
+      updateGo();
+    });
+    label.appendChild(box);
+    label.appendChild(el("code", "", b.name));
+    var counts = b.ahead == null ? "" : b.ahead + " ahead, " + b.behind + " behind " + branches.default;
+    label.appendChild(el("small", "", [counts, b.subject].filter(Boolean).join(" · ")));
+    return label;
+  }
+  function updateGo() {
+    var count = Object.keys(chosen).length, go = $("tour-go");
+    if (!go) return;
+    go.disabled = !count;
+    go.textContent = count === 1 ? "Tour 1 branch" : "Tour " + count + " branches";
+  }
+  function fillPicker() {
+    var list = $("tour-list");
+    if (!list) return;
+    var base = $("tour-base").value, q = $("tour-filter").value.trim().toLowerCase();
+    delete chosen[base];
+    list.replaceChildren();
+    var rows = branches.branches.filter(function (b) { return b.name !== base && b.name.toLowerCase().indexOf(q) >= 0; });
+    rows.forEach(function (b) { list.appendChild(pickerRow(b)); });
+    if (!rows.length) list.appendChild(el("p", "empty", "No other branches match."));
+    updateGo();
+  }
+  function buildPicker() {
+    var box = $("tour-picker");
+    box.replaceChildren();
+    if (!served) {
+      box.appendChild(el("div", "note-wait", "This page was opened as a file. Ask Claude to “use repo-rabbit to open the map” to pick branches here, or name them in chat."));
+      return;
+    }
+    if (!branches || !branches.branches.length) { box.appendChild(el("p", "empty", "No git branches found.")); return; }
+    var top = el("div", "pick-row");
+    var baseLabel = el("label", "", "Compare against ");
+    var base = el("select");
+    base.id = "tour-base";
+    branches.branches.forEach(function (b) { var o = el("option", "", b.name); o.value = b.name; base.appendChild(o); });
+    base.value = branches.default;
+    base.addEventListener("change", fillPicker);
+    baseLabel.appendChild(base);
+    var filter = el("input", "grow");
+    filter.id = "tour-filter";
+    filter.type = "search";
+    filter.placeholder = "Filter branches";
+    filter.setAttribute("aria-label", "Filter branches");
+    filter.addEventListener("input", fillPicker);
+    var go = el("button", "", "Tour 0 branches");
+    go.id = "tour-go";
+    go.type = "button";
+    go.disabled = true;
+    go.addEventListener("click", submitTours);
+    [baseLabel, filter, go].forEach(function (n) { top.appendChild(n); });
+    var list = el("div", "pick-list");
+    list.id = "tour-list";
+    var msg = el("div");
+    msg.id = "tour-msg";
+    msg.setAttribute("role", "status");
+    box.appendChild(top);
+    box.appendChild(list);
+    box.appendChild(msg);
+    if (branches.truncated) box.appendChild(el("div", "note-wait", "Showing the " + branches.branches.length + " most recently updated of " + branches.total + " branches."));
+    fillPicker();
+  }
+  function submitTours() {
+    var body = { base: $("tour-base").value, branches: Object.keys(chosen) };
+    $("tour-go").disabled = true;
+    fetch("api/tours", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) { $("tour-msg").textContent = res.j.error || "Could not save."; updateGo(); return; }
+        $("tour-msg").textContent = "";
+        chosen = {};
+        NOTES = res.j.notes;
+        fillPicker();
+        renderNotes();
+      })
+      .catch(function () { $("tour-msg").textContent = "The local server is not answering."; updateGo(); });
+  }
+  function renderTourStatus() {
+    var box = $("tour-status");
+    if (!box) return;
+    box.replaceChildren();
+    var pending = (NOTES.tours || []).filter(function (t) { return t.status !== "done"; });
+    if (!pending.length) return;
+    pending.forEach(function (t) {
+      var row = el("div", "tour-row");
+      row.appendChild(el("span", "status st-" + (t.status === "open" ? "open" : t.status), t.status === "open" ? "waiting" : t.status));
+      row.appendChild(el("code", "", t.branch));
+      row.appendChild(el("small", "", "onto " + t.base));
+      var steps = (NOTES.activity || {})[t.id] || [];
+      if (t.status === "touring" && steps.length) row.appendChild(el("small", "", steps[steps.length - 1].message));
+      if (t.status === "failed") row.appendChild(el("small", "note-error", t.error || "The tour failed."));
+      box.appendChild(row);
+    });
+    if (pending.some(function (t) { return t.status === "open"; })) {
+      box.appendChild(el("div", "note-wait", "RepoRabbit only runs when you ask, so paste this into Claude Code:"));
+      box.appendChild(promptRow(TOUR_PROMPT));
+    }
+  }
+  function maybeReloadForTours() {
+    var fresh = (NOTES.tours || []).filter(function (t) { return t.status === "done" && META.tours_ready.indexOf(t.id) < 0; });
+    if (!fresh.length || !window.getSelection().isCollapsed || $("ask").open) return;
+    var key = fresh.map(function (t) { return t.id; }).join();
+    if (store("reloaded") === key) return;   // One reload per finished set, even if the page lags.
+    store("reloaded", key);
+    location.hash = "#s-tours";
+    location.reload();
   }
   function card(q, withJump) {
     var c = el("div", "note-card");
@@ -500,8 +772,28 @@ dialog textarea { width: 100%; min-height: 96px; padding: 8px; border: 1px solid
     }
     c.appendChild(head);
     if (withJump && q.selected_text) c.appendChild(el("div", "note-quote", q.selected_text));
-    c.appendChild(el("div", "note-q", q.question));
     if (q.anchor === "orphaned" && withJump) c.appendChild(el("div", "empty", "The Atlas block this was attached to no longer exists. The note is kept here."));
+    appendTurn(c, q);
+    var turns = followUps(q);
+    turns.forEach(function (t) {
+      var box = el("div", "note-turn");
+      box.dataset.qid = t.id;
+      var meta = el("div", "note-head");
+      meta.appendChild(el("span", "status st-" + t.status, statusLabel(t)));
+      meta.appendChild(el("span", "", "Follow-up · " + when(t.created_at)));
+      box.appendChild(meta);
+      appendTurn(box, t);
+      c.appendChild(box);
+    });
+    var last = turns.length ? turns[turns.length - 1] : q;
+    if (served && q.kind !== "note" && (last.status === "answered" || last.status === "failed")) c.appendChild(composer(last));
+    return c;
+  }
+  function followUps(root) {
+    return NOTES.questions.filter(function (t) { return t.root_id === root.id; });
+  }
+  function appendTurn(c, q) {
+    c.appendChild(el("div", "note-q", q.question));
     (NOTES.answers[q.id] || []).forEach(function (a) {
       var box = el("div", "note-answer");
       if (a.stale) box.appendChild(el("span", "status st-open", "cited code has changed"));
@@ -511,7 +803,62 @@ dialog textarea { width: 100%; min-height: 96px; padding: 8px; border: 1px solid
       c.appendChild(box);
     });
     if (q.status === "failed" && q.error) c.appendChild(el("div", "note-error", "Investigation failed: " + q.error));
-    return c;
+    if (q.status === "open") c.appendChild(el("div", "note-wait", NOTES.auto && NOTES.auto.enabled ? "RepoRabbit will pick this up automatically." : "Waiting for you to start RepoRabbit. Rabbit Notes has the words to paste into Claude Code."));
+    var steps = (NOTES.activity || {})[q.id] || [];
+    if (steps.length) {
+      var box2 = el("details", "timeline");
+      box2.open = q.status === "investigating";
+      box2.appendChild(el("summary", "", q.status === "investigating" ? "What RepoRabbit is doing" : "How RepoRabbit worked this out"));
+      var list2 = el("ol");
+      steps.forEach(function (s) {
+        var li = el("li");
+        li.appendChild(el("time", "", clock(s.at)));
+        li.appendChild(document.createTextNode(s.message));
+        list2.appendChild(li);
+      });
+      box2.appendChild(list2);
+      c.appendChild(box2);
+    }
+  }
+  function composing() {
+    return Array.prototype.some.call(document.querySelectorAll(".followup textarea"), function (t) {
+      return t.value.trim() || t === document.activeElement;
+    });
+  }
+  function composer(last) {
+    var wrap = el("div", "followup"), open = el("button", "link-btn", "Ask a follow-up");
+    open.type = "button";
+    open.addEventListener("click", function () {
+      wrap.replaceChildren();
+      var text = el("textarea");
+      text.maxLength = 4000;
+      text.placeholder = "What would you like to know next?";
+      text.setAttribute("aria-label", "Your follow-up question");
+      var row = el("div", "row"), send = el("button", "send", "Send"), cancel = el("button", "link-btn", "Cancel"), msg = el("span", "msg");
+      send.type = cancel.type = "button";
+      cancel.addEventListener("click", function () { wrap.replaceChildren(open); });
+      send.addEventListener("click", function () {
+        var question = text.value.trim();
+        if (!question) return;
+        send.disabled = true;
+        fetch("api/questions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ follow_up_to: last.id, question: question }) })
+          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+          .then(function (res) {
+            send.disabled = false;
+            if (!res.ok) { msg.textContent = res.j.error || "Could not save."; return; }
+            text.value = "";
+            NOTES = res.j.notes;
+            renderNotes();
+          })
+          .catch(function () { send.disabled = false; msg.textContent = "The local server is not answering. Your text is still here."; });
+      });
+      [send, cancel, msg].forEach(function (n) { row.appendChild(n); });
+      wrap.appendChild(text);
+      wrap.appendChild(row);
+      text.focus();
+    });
+    wrap.appendChild(open);
+    return wrap;
   }
   function clearThreads() {
     document.querySelectorAll(".thread-wrap").forEach(function (t) { t.remove(); });
@@ -526,7 +873,7 @@ dialog textarea { width: 100%; min-height: 96px; padding: 8px; border: 1px solid
   function placeThreads() {
     clearThreads();
     NOTES.questions.forEach(function (q) {
-      if (q.anchor === "orphaned") return;
+      if (q.root_id || q.anchor === "orphaned") return;   // Follow-ups live inside their first question's card.
       var block = document.getElementById("x-" + q.block_id);
       if (!block) return;
       if (!markSelection(block, q) && block.querySelector("svg")) block.classList.add("note-anchored-svg");
@@ -542,13 +889,20 @@ dialog textarea { width: 100%; min-height: 96px; padding: 8px; border: 1px solid
   var filter = "all";
   var FILTERS = [["all", "All"], ["open", "Open"], ["answered", "Answered"], ["failed", "Failed"], ["noted", "Notes"], ["orphaned", "Orphaned"]];
   function matches(q, f) {
+    if (f === "open") return q.status === "open" || q.status === "investigating";
     return f === "all" || (f === "orphaned" ? q.anchor === "orphaned" : q.status === f);
+  }
+  function threads() {
+    return NOTES.questions.filter(function (q) { return !q.root_id; });
+  }
+  function threadMatches(root, f) {
+    return [root].concat(followUps(root)).some(function (q) { return matches(q, f); });
   }
   function renderPanel() {
     var bar = $("filters"), list = $("notes-list");
     bar.replaceChildren();
     FILTERS.forEach(function (f) {
-      var count = NOTES.questions.filter(function (q) { return matches(q, f[0]); }).length;
+      var count = threads().filter(function (q) { return threadMatches(q, f[0]); }).length;
       var b = el("button", "", f[1] + " " + count);
       b.type = "button";
       b.setAttribute("aria-pressed", String(filter === f[0]));
@@ -556,10 +910,10 @@ dialog textarea { width: 100%; min-height: 96px; padding: 8px; border: 1px solid
       bar.appendChild(b);
     });
     list.replaceChildren();
-    var rows = NOTES.questions.filter(function (q) { return matches(q, filter); }).slice().reverse();
+    var rows = threads().filter(function (q) { return threadMatches(q, filter); }).reverse();
     rows.forEach(function (q) { list.appendChild(card(q, true)); });
     if (!rows.length) list.appendChild(el("p", "empty", "No notes here yet. Highlight something in the Atlas to start."));
-    var open = NOTES.questions.filter(function (q) { return q.status === "open"; }).length;
+    var open = NOTES.questions.filter(function (q) { return q.status === "open" || q.status === "investigating"; }).length;
     var badge = $("notes-count");
     badge.hidden = !open;
     badge.textContent = open;
@@ -567,6 +921,10 @@ dialog textarea { width: 100%; min-height: 96px; padding: 8px; border: 1px solid
   function renderNotes() {
     placeThreads();
     renderPanel();
+    renderFlow();
+    renderLive();
+    renderTourStatus();
+    maybeReloadForTours();
     applyIde();
     docs = null;
   }
@@ -584,15 +942,18 @@ dialog textarea { width: 100%; min-height: 96px; padding: 8px; border: 1px solid
         if (data && data.version !== NOTES.version) {
           NOTES = data;
           // A selection in progress must not be destroyed by re-marking.
-          if (window.getSelection().isCollapsed && !$("ask").open) renderNotes();
+          if (window.getSelection().isCollapsed && !$("ask").open && !composing()) renderNotes();
           else NOTES.version = "";
         }
       }).catch(function () {});
     };
+    fetch("api/branches", { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) { branches = data; buildPicker(); }).catch(function () { buildPicker(); });
     poll();
-    setInterval(poll, 4000);
+    setInterval(function () { poll(); renderFlow(); renderLive(); }, 4000);
   } else {
     $("offline").hidden = false;
+    buildPicker();
   }
 
   // -- asking -------------------------------------------------------------------
@@ -614,10 +975,10 @@ dialog textarea { width: 100%; min-height: 96px; padding: 8px; border: 1px solid
     if (pre) {
       var endNode = range.endContainer.nodeType === 1 ? range.endContainer : range.endContainer.parentElement;
       var first = start.closest(".line"), last = endNode.closest(".line");
-      if (first) {
+      if (first && first.dataset.line) {   // Removed diff lines have no place in the branch's file.
         info.source_file = pre.dataset.path;
         info.source_start = Number(first.dataset.line);
-        info.source_end = last && pre.contains(last) ? Number(last.dataset.line) : info.source_start;
+        info.source_end = last && pre.contains(last) && last.dataset.line ? Number(last.dataset.line) : info.source_start;
       }
     }
     return { info: info, rect: range.getBoundingClientRect() };

@@ -1,7 +1,7 @@
 ---
 name: repo-rabbit
 description: Map an unfamiliar codebase into an interactive, source-cited Atlas, open it, answer questions highlighted in it, or refresh it after code changes.
-argument-hint: "[explore | open the map | investigate my questions | refresh]"
+argument-hint: "[explore | open the map | investigate my questions | refresh | tour branches]"
 context: fork
 agent: repo-rabbit
 ---

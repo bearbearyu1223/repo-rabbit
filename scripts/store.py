@@ -27,7 +27,7 @@ try:
 except ImportError:  # Windows: writes stay atomic, but concurrent writers are not serialized.
     fcntl = None  # type: ignore[assignment]
 
-QUESTION_STATUSES = ("open", "answered", "failed", "noted")
+QUESTION_STATUSES = ("open", "investigating", "answered", "failed", "noted")
 ANCHOR_STATES = ("ok", "drifted", "orphaned")
 
 
@@ -64,6 +64,14 @@ class Paths:
     @property
     def answers(self) -> Path:
         return self.root / "answers.jsonl"
+
+    @property
+    def tours(self) -> Path:
+        return self.root / "tours.jsonl"
+
+    @property
+    def activity(self) -> Path:
+        return self.root / "activity.jsonl"
 
     @property
     def cache(self) -> Path:
@@ -215,6 +223,8 @@ def add_question(paths: Paths, fields: dict) -> dict:
         "source_file": fields.get("source_file"),
         "source_start": fields.get("source_start"),
         "source_end": fields.get("source_end"),
+        "parent_id": fields.get("parent_id"),
+        "root_id": fields.get("root_id"),
         "created_at": now_iso(),
         "status": "noted" if fields.get("kind") == "note" else "open",
         "anchor": "ok",
@@ -267,3 +277,41 @@ def mark_failed(paths: Paths, question_id: str, reason: str) -> None:
         known = {q.get("id") for q in load_questions(paths)}
         if question_id not in known:
             raise KeyError(question_id)
+
+
+def claim_question(paths: Paths, question_id: str) -> None:
+    """Show that the agent has picked this question up."""
+    known = {q.get("id"): q for q in load_questions(paths)}
+    if question_id not in known:
+        raise KeyError(question_id)
+    update_questions(paths, {question_id: {"status": "investigating", "started_at": now_iso()}})
+
+
+def log_activity(paths: Paths, message: str, question_id: str | None = None) -> dict:
+    """Record one progress line for the page to show. Never required for correctness."""
+    record = {"at": now_iso(), "message": message, "question_id": question_id}
+    with locked(paths):
+        _append_jsonl(paths.activity, record)
+    return record
+
+
+def load_activity(paths: Paths) -> list[dict]:
+    return read_jsonl(paths.activity)[0]
+
+
+def load_tours(paths: Paths) -> list[dict]:
+    return read_jsonl(paths.tours)[0]
+
+
+def update_tours(paths: Paths, changes: dict[str, dict]) -> None:
+    with locked(paths):
+        records, bad = read_jsonl(paths.tours)
+        for record in records:
+            record.update(changes.get(record.get("id"), {}))
+        _rewrite_jsonl(paths, paths.tours, records, bad)
+
+
+def delete_tours(paths: Paths, ids: set[str]) -> None:
+    with locked(paths):
+        records, bad = read_jsonl(paths.tours)
+        _rewrite_jsonl(paths, paths.tours, [r for r in records if r.get("id") not in ids], bad)
