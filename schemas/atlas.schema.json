@@ -1,0 +1,370 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "repo-rabbit/atlas.schema.json",
+  "title": "RepoRabbit Atlas",
+  "description": "The structured source of truth for a generated Atlas. index.html is derived from this.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project", "coverage", "next_steps", "sections"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "one_liner"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "one_liner": { "type": "string", "minLength": 1, "maxLength": 400 }
+      }
+    },
+    "coverage": { "$ref": "#/$defs/coverage" },
+    "next_steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/item" }
+    },
+    "sections": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": { "$ref": "#/$defs/section" }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,118}$" },
+    "certainty": {
+      "description": "verified: read at the cited lines. inferred: reasoning from cited evidence. tested: confirmed by a cited test or an actual run. documented: stated by cited docs, not checked against code. context: framing with no code-specific claim. absence: searched and not found.",
+      "enum": ["verified", "inferred", "tested", "documented", "context", "absence"]
+    },
+    "ref": {
+      "description": "A source location. Draft refs give start/end, or an anchor (a substring of exactly one line; a leading ^ means the whole stripped line). hash and state are added by RepoRabbit.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "start": { "type": "integer", "minimum": 1 },
+        "end": { "type": "integer", "minimum": 1 },
+        "anchor": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "anchor_end": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "hash": { "type": "string" },
+        "state": { "enum": ["fresh", "moved", "changed", "lost", "missing"] }
+      }
+    },
+    "refs": { "type": "array", "items": { "$ref": "#/$defs/ref" } },
+    "text": { "type": "string", "minLength": 1, "maxLength": 12000 },
+    "stale": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason"],
+      "properties": {
+        "reason": { "type": "string" },
+        "files": { "type": "array", "items": { "type": "string" } },
+        "since": { "type": ["string", "null"] }
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": { "$ref": "#/$defs/text" },
+        "refs": { "$ref": "#/$defs/refs" },
+        "certainty": { "$ref": "#/$defs/certainty" }
+      }
+    },
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "text"],
+      "properties": {
+        "key": { "$ref": "#/$defs/id" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "text": { "$ref": "#/$defs/text" },
+        "refs": { "$ref": "#/$defs/refs" },
+        "certainty": { "$ref": "#/$defs/certainty" }
+      }
+    },
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cells"],
+      "properties": {
+        "cells": { "type": "array", "minItems": 1, "items": { "type": "string", "maxLength": 3000 } },
+        "refs": { "$ref": "#/$defs/refs" },
+        "certainty": { "$ref": "#/$defs/certainty" }
+      }
+    },
+    "coverage_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["area", "why"],
+      "properties": {
+        "area": { "type": "string", "minLength": 1 },
+        "why": { "type": "string", "minLength": 1 }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deep", "scanned", "skipped"],
+      "properties": {
+        "deep": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/coverage_item" } },
+        "scanned": { "type": "array", "items": { "$ref": "#/$defs/coverage_item" } },
+        "skipped": { "type": "array", "items": { "$ref": "#/$defs/coverage_item" } },
+        "budget": { "type": "string" },
+        "commands_run": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "intro", "groups"],
+      "properties": {
+        "id": { "enum": ["overview", "architecture", "modules", "stack", "workflows", "walkthrough"] },
+        "intro": { "$ref": "#/$defs/text" },
+        "groups": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/group" } }
+      }
+    },
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "blocks"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "topic": { "$ref": "#/$defs/id" },
+        "summary": { "type": "string", "maxLength": 2000 },
+        "collapsible": { "type": "boolean" },
+        "open": { "type": "boolean" },
+        "related": { "type": "array", "items": { "$ref": "#/$defs/id" } },
+        "files": { "type": "array", "items": { "type": "string" } },
+        "blocks": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/block" } }
+      }
+    },
+    "block": {
+      "type": "object",
+      "required": ["id", "type"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "enum": ["prose", "list", "facts", "table", "code", "decision", "component_diagram", "sequence_diagram", "step", "execution_tree"] },
+        "stale": { "$ref": "#/$defs/stale" }
+      },
+      "oneOf": [
+        { "$ref": "#/$defs/prose_block" },
+        { "$ref": "#/$defs/list_block" },
+        { "$ref": "#/$defs/facts_block" },
+        { "$ref": "#/$defs/table_block" },
+        { "$ref": "#/$defs/code_block" },
+        { "$ref": "#/$defs/decision_block" },
+        { "$ref": "#/$defs/component_block" },
+        { "$ref": "#/$defs/sequence_block" },
+        { "$ref": "#/$defs/step_block" },
+        { "$ref": "#/$defs/tree_block" }
+      ]
+    },
+    "prose_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "text"],
+      "properties": {
+        "id": {}, "stale": {},
+        "type": { "const": "prose" },
+        "text": { "$ref": "#/$defs/text" },
+        "refs": { "$ref": "#/$defs/refs" },
+        "certainty": { "$ref": "#/$defs/certainty" }
+      }
+    },
+    "list_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "items"],
+      "properties": {
+        "id": {}, "stale": {},
+        "type": { "const": "list" },
+        "title": { "type": "string", "maxLength": 200 },
+        "ordered": { "type": "boolean" },
+        "items": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/item" } }
+      }
+    },
+    "facts_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "items"],
+      "properties": {
+        "id": {}, "stale": {},
+        "type": { "const": "facts" },
+        "items": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/fact" } }
+      }
+    },
+    "table_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "headers", "rows"],
+      "properties": {
+        "id": {}, "stale": {},
+        "type": { "const": "table" },
+        "title": { "type": "string", "maxLength": 200 },
+        "headers": { "type": "array", "minItems": 1, "items": { "type": "string", "maxLength": 200 } },
+        "rows": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/row" } }
+      }
+    },
+    "code_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "ref"],
+      "properties": {
+        "id": {}, "stale": {},
+        "type": { "const": "code" },
+        "ref": { "$ref": "#/$defs/ref" },
+        "caption": { "type": "string", "maxLength": 1000 }
+      }
+    },
+    "decision_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "title", "what", "why", "tradeoffs", "refs"],
+      "properties": {
+        "id": {}, "stale": {},
+        "type": { "const": "decision" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "pattern": { "type": "string", "maxLength": 200 },
+        "what": { "$ref": "#/$defs/text" },
+        "why": { "$ref": "#/$defs/text" },
+        "tradeoffs": { "$ref": "#/$defs/text" },
+        "refs": { "$ref": "#/$defs/refs" },
+        "certainty": { "$ref": "#/$defs/certainty" }
+      }
+    },
+    "component_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "nodes", "edges"],
+      "properties": {
+        "id": {}, "stale": {},
+        "type": { "const": "component_diagram" },
+        "caption": { "type": "string", "maxLength": 1000 },
+        "nodes": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 40,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "label"],
+            "properties": {
+              "id": { "$ref": "#/$defs/id" },
+              "label": { "type": "string", "minLength": 1, "maxLength": 60 },
+              "detail": { "type": "string", "maxLength": 80 },
+              "kind": { "enum": ["entry", "module", "store", "external"] },
+              "target": { "$ref": "#/$defs/id" }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from", "to"],
+            "properties": {
+              "from": { "$ref": "#/$defs/id" },
+              "to": { "$ref": "#/$defs/id" },
+              "label": { "type": "string", "maxLength": 60 },
+              "kind": { "enum": ["static", "runtime"] }
+            }
+          }
+        },
+        "refs": { "$ref": "#/$defs/refs" },
+        "certainty": { "$ref": "#/$defs/certainty" }
+      }
+    },
+    "sequence_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "participants", "messages"],
+      "properties": {
+        "id": {}, "stale": {},
+        "type": { "const": "sequence_diagram" },
+        "caption": { "type": "string", "maxLength": 1000 },
+        "participants": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "label"],
+            "properties": {
+              "id": { "$ref": "#/$defs/id" },
+              "label": { "type": "string", "minLength": 1, "maxLength": 40 }
+            }
+          }
+        },
+        "messages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from", "to", "label"],
+            "properties": {
+              "from": { "$ref": "#/$defs/id" },
+              "to": { "$ref": "#/$defs/id" },
+              "label": { "type": "string", "minLength": 1, "maxLength": 120 },
+              "kind": { "enum": ["call", "return", "async", "error"] }
+            }
+          }
+        },
+        "refs": { "$ref": "#/$defs/refs" },
+        "certainty": { "$ref": "#/$defs/certainty" }
+      }
+    },
+    "step_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "number", "title", "code", "what", "why", "inputs", "outputs", "next"],
+      "properties": {
+        "id": {}, "stale": {},
+        "type": { "const": "step" },
+        "number": { "type": "integer", "minimum": 1 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "code": { "$ref": "#/$defs/ref" },
+        "what": { "$ref": "#/$defs/text" },
+        "why": { "$ref": "#/$defs/text" },
+        "inputs": { "$ref": "#/$defs/text" },
+        "outputs": { "$ref": "#/$defs/text" },
+        "next": { "$ref": "#/$defs/text" },
+        "behavior": { "$ref": "#/$defs/text" },
+        "refs": { "$ref": "#/$defs/refs" },
+        "certainty": { "$ref": "#/$defs/certainty" }
+      }
+    },
+    "tree_node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "kind"],
+      "properties": {
+        "label": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "kind": { "enum": ["call", "branch", "io", "async", "error"] },
+        "note": { "type": "string", "maxLength": 400 },
+        "ref": { "$ref": "#/$defs/ref" },
+        "target": { "$ref": "#/$defs/id" },
+        "children": { "type": "array", "items": { "$ref": "#/$defs/tree_node" } }
+      }
+    },
+    "tree_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "root"],
+      "properties": {
+        "id": {}, "stale": {},
+        "type": { "const": "execution_tree" },
+        "caption": { "type": "string", "maxLength": 1000 },
+        "root": { "$ref": "#/$defs/tree_node" },
+        "certainty": { "$ref": "#/$defs/certainty" }
+      }
+    }
+  }
+}
